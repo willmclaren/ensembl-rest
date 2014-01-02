@@ -1,3 +1,21 @@
+=head1 LICENSE
+
+Copyright [1999-2013] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+=cut
+
 package EnsEMBL::REST::Controller::Compara;
 use Moose;
 use namespace::autoclean;
@@ -18,7 +36,7 @@ sub get_adaptors :Private {
 
   try {
     my $species = $c->stash()->{species};
-    my $compara_dba = $c->model('Registry')->get_best_compara_DBAdaptor($species, $c->request()->param('compara'));
+    my $compara_dba = $c->model('Registry')->get_best_compara_DBAdaptor($species, $c->request()->param('compara'), $self->default_compara());
     my $gma = $compara_dba->get_GeneMemberAdaptor();
     my $sma = $compara_dba->get_SeqMemberAdaptor();
     my $ha = $compara_dba->get_HomologyAdaptor();
@@ -269,7 +287,7 @@ sub _full_encoding {
         $result->{align_seq} = $member->alignment_string();
       }
       elsif($seq_type eq 'cdna') {
-       $result->{align_seq} = $member->cdna_alignment_string();
+       $result->{align_seq} = $member->alignment_string('cds');
        $result->{align_seq} =~ s/\s//g;
       }
     }
@@ -278,7 +296,7 @@ sub _full_encoding {
         $result->{seq} = $member->sequence();
       }
       elsif($seq_type eq 'cdna') {
-        $result->{seq} = $member->sequence_cds();
+        $result->{seq} = $member->other_sequence('cds');
       }
     }
     return $result;
@@ -286,10 +304,9 @@ sub _full_encoding {
   
   while(my $h = shift @{$homologies}) {
     my ($src, $trg) = $self->_decode_members($h, $stable_id);
-    my $type = $h->description();
     my $e = {
-      type => $type,
-      subtype => $h->subtype(),
+      type => $h->description(),
+      taxonomy_level => $h->taxonomy_level(),
       dn_ds => $h->dnds_ratio(),
       source => $encode->($src),
       target => $encode->($trg),
@@ -310,7 +327,7 @@ sub _condensed_encoding {
     my $gene_member = $trg->gene_member();
     my $e = {
       type => $h->description(),
-      subtype => $h->subtype(),
+      taxonomy_level => $h->taxonomy_level(),
       id => $gene_member->stable_id(),
       protein_id => $gene_member->get_canonical_SeqMember()->stable_id(),
       species => $gene_member->genome_db->name(),

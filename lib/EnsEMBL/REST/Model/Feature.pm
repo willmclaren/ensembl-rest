@@ -1,3 +1,21 @@
+=head1 LICENSE
+
+Copyright [1999-2013] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+=cut
+
 package EnsEMBL::REST::Model::Feature;
 
 use Moose;
@@ -62,7 +80,8 @@ sub fetch_features {
     next if $feature_type eq 'none';
     my $allowed = $allowed_features->{$feature_type};
     $c->go('ReturnError', 'custom', ["The feature type $feature_type is not understood"]) if ! $allowed;
-    my $objects = $self->$feature_type($slice);
+    # my $objects = $self->$feature_type($slice);
+    my $objects = $self->_trim_features($self->$feature_type($slice));
     if($is_gff3 || $is_bed) {
       push(@final_features, @{$objects});
     }
@@ -150,6 +169,8 @@ sub gene {
   my ($dbtype, $load_transcripts, $source, $biotype) = 
     (undef, undef, $c->request->parameters->{source}, $c->request->parameters->{biotype});
   return $slice->get_all_Genes($self->_get_logic_dbtype(), $load_transcripts, $source, $biotype);
+  # my $genes = $slice->get_all_Genes($self->_get_logic_dbtype(), $load_transcripts, $source, $biotype);
+  # return [ grep { $self->_trim_feature($_) } ] @{$genes};
 }
 
 sub transcript {
@@ -348,6 +369,164 @@ sub _get_logic_dbtype {
   my $logic_name = $c->request->parameters->{logic_name};
   my $db_type = $c->request->parameters->{db_type};
   return ($logic_name, $db_type);
+}
+
+sub _trim_features {
+  my ($self, $features) = @_;
+  my $c = $self->context();
+  my ($trim_upstream, $trim_downstream) = 
+    ($c->request->parameters->{trim_upstream}, 
+     $c->request->parameters->{trim_downstream});
+
+  # skip if not interested in trimming
+  return $features
+    unless $trim_upstream or $trim_downstream;
+ 
+  my $filtered_features;
+  my $slice = $c->stash()->{slice};
+  my ($sstart, $send, $strand) = 
+    ($slice->start, $slice->end, $slice->strand);
+  my $circular = $slice->is_circular();
+
+  foreach my $feature (@{$features}) {
+    my $trim = 0;
+    my ($start, $end) = 
+      ($feature->seq_region_start,
+       $feature->seq_region_end);
+
+    # customosised checks in case of
+    # circular chrmosomes
+    next if $circular and 
+      $self->has_to_be_trimmed_in_circ_chr($feature, 
+					   $trim_upstream, 
+					   $trim_downstream);
+
+    if ($trim_upstream and $trim_downstream) {
+      next if $start < $sstart or $end > $send;
+    } elsif ($trim_upstream) {
+      if ($strand == 1) {
+	next if $start < $sstart;
+      } else {
+	next if $end > $send;
+      }
+    } elsif ($trim_downstream) {
+      if ($strand == 1) {
+	next if $end > $send;
+      } else {
+	next if $start < $sstart;
+      }
+    }
+
+    push @{$filtered_features}, $feature;
+  }
+  
+  return $filtered_features;
+}
+
+sub _has_to_be_trimmed_in_circ_chr {
+  my ($self, $feature, $trim_upstream, $trim_downstream) = @_;
+
+  my $slice = $self->context()->stash()->{slice};
+
+  my ($sstart, $send, $strand) = 
+    ($slice->start, $slice->end, $slice->strand);
+  my $seq_region_len = $slice->seq_region_length();
+
+  my ($seq_region_start, $seq_region_end) = 
+    ($feature->seq_region_start,
+     $feature->seq_region_end);
+
+  my $trim = 0;
+  my ($start, $end);
+
+  if ($strand == 1) { # Positive strand		
+    $start = $seq_region_start - $sstart + 1;
+    $end   = $seq_region_end - $sstart + 1;
+
+    #
+    # TODO
+    # can be optimised, assumed already the chromosome is know to be circular
+    #
+    if ($slice->is_circular()) {
+      # Handle cicular chromosomes.
+
+      if ($start > $end) {
+	# Looking at a feature overlapping the chromsome origin.
+	if ($end > $sstart) { 
+	  # Looking at the region in the beginning of the chromosome.
+	  $start -= $seq_region_len;
+	}
+
+	$end += $seq_region_len if $end < 0;
+      } else {
+	if ($sstart > $send && $end < 0) {
+	  # Looking at the region overlapping the chromosome
+	  # origin and a feature which is at the beginning of the
+	  # chromosome.
+	  $start += $seq_region_len;
+	  $end   += $seq_region_len;
+	}
+      }
+    }
+    
+  } else { # Negative strand
+    $start = $send - $seq_region_end + 1;
+    $end = $send - $seq_region_start + 1;
+
+    if ($slice->is_circular()) {
+      if ($sstart > $send) { # slice spans origin or replication
+	if ($seq_region_start >= $sstart) {
+	  $end += $seq_region_len;
+	  $start += $seq_region_len 
+	    if $seq_region_end > $sstart;
+
+	} elsif ($seq_region_start <= $send) {
+	  # do nothing
+	} elsif ($seq_region_end >= $sstart) {
+	  $start += $seq_region_len;
+	  $end += $seq_region_len;
+
+	} elsif ($seq_region_end <= $send) {
+	  $end += $seq_region_len
+	    if $end < 0;
+
+	} elsif ($seq_region_start > $seq_region_end) {
+	  $end += $seq_region_len;
+
+	} else { }
+      } else {
+	if ($seq_region_start <= $send and $seq_region_end >= $sstart) {
+	  # do nothing
+	} elsif ($seq_region_start > $seq_region_end) {
+	  if ($seq_region_start <= $send) {
+	    $start -= $seq_region_len;
+
+	  } elsif ($seq_region_end >= $sstart) {
+	    $end += $seq_region_len;
+	  } else { }
+	}
+      }
+
+    }
+  }
+
+  if ($trim_upstream and $trim_downstream) {
+    $trim = 1 if $start < 0 or $end > 0;
+  } elsif ($trim_upstream) {
+    if ($strand == 1) {
+      $trim = 1 if $start < $0;
+    } else {
+      $trim = 1 if $end > $0;
+    }
+  } elsif ($trim_downstream) {
+    if ($strand == 1) {
+      $trim = 1 if $end > $0;
+    } else {
+      $trim = 1 if $start < $0;
+    }
+  }
+  
+  return $trim;
 }
 
 with 'EnsEMBL::REST::Role::Content';

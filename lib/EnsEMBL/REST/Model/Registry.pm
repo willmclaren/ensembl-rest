@@ -1,3 +1,21 @@
+=head1 LICENSE
+
+Copyright [1999-2013] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+=cut
+
 package EnsEMBL::REST::Model::Registry;
 
 use Moose;
@@ -180,13 +198,30 @@ sub _build_lookup {
   return Bio::EnsEMBL::LookUp->new(%args);
 }
 
+# Logic here is if we were told a compara name we use that
+# If not we query the species for the "best" compara (normally depends on division)
+# If no hit and the queried name was different from the default name then try that
+# Return if we got a hit otherwise throw an error
 sub get_best_compara_DBAdaptor {
-  my ($self, $species, $request_compara_name) = @_;
+  my ($self, $species, $request_compara_name, $default_compara) = @_;
+  $default_compara = 'multi' if ! defined $default_compara;
   my $compara_name = $request_compara_name || $self->get_compara_name_for_species($species);
   if(!$compara_name) {
     throw "Cannot find a suitable compara database for the species $species. Try specifying a compara parameter";
   }
-  return $self->get_DBAdaptor($compara_name, 'compara');
+  my $dba = $self->get_DBAdaptor($compara_name, 'compara', 'no alias check');
+
+  # If the compara name we used was not the same then we've got another bite at the cherry
+  if(! $dba && $compara_name ne $default_compara) {
+    $dba = $self->get_DBAdaptor($default_compara, 'compara', 'no alias check');
+  }
+
+  # Throw an error if we had no DBAdaptor
+  if(!$dba) {
+    throw "Cannot find a database adaptor for $compara_name or $default_compara. Please contact the server admin with this error message and URL";
+  }
+
+  return $dba;
 } 
 
 sub get_DBAdaptor {

@@ -1,3 +1,17 @@
+# Copyright [1999-2013] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
+# 
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#      http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 use strict;
 use warnings;
 
@@ -111,6 +125,61 @@ my $base = '/feature/region/homo_sapiens';
   $json = json_GET("$base/$region?feature=transcript;biotype=wibble;biotype=protein_coding", 'Fetching wibble & protein_coding biotype transcripts');
   is(scalar(@{$json}), 1, '1 biotype wibble and protein_coding transcript models');
 }
+
+#trim_(upstream|downstream) queries
+{
+  # positive strand, trim 5'
+  my $region = '6:1081000-1108340';
+  my $json = json_GET("$base/$region?feature=gene;trim_upstream=0", 'Positive strand, no upstream trimming');
+  is(scalar(@{$json}), 1, '1 protein coding gene models expected');
+
+  $json = json_GET("$base/$region?feature=gene;trim_upstream=1", 'Positive stramd, trim upstream');
+  is(scalar(@{$json}), 0, '0 gene models expected');
+  
+  # positive strand, trim 3'
+  $region = '6:1080000-1104000';
+  $json = json_GET("$base/$region?feature=gene;trim_downstream=0", 'Positive strand, no downstream trimming');
+  is(scalar(@{$json}), 1, '1 protein coding gene models expected');
+
+  $json = json_GET("$base/$region?feature=gene;trim_downstream=1", 'Positive strand, trim downstream');
+  is(scalar(@{$json}), 0, '0 gene models expected');
+
+  # positive strand, trim both
+  $region = '6:1081000-1104000';
+  $json = json_GET("$base/$region?feature=gene;trim_upstream=1;trim_downstream=1", 'Positive strand, trim up-downstream');
+  is(scalar(@{$json}), 0, '0 gene models expected');
+
+  $region = '6:1080000-1108000';
+  $json = json_GET("$base/$region?feature=gene;trim_upstream=1;trim_downstream=1", 'Positive strand, trim up-downstream');
+  is(scalar(@{$json}), 1, '1 gene models expected');
+  
+  # negative strand, trim 5'
+  $region = '6:1510000-1515000:-1';
+  $json = json_GET("$base/$region?feature=gene;trim_upstream=0", 'Negative strand, no upstream trimming');
+  is(scalar(@{$json}), 1, '1 protein coding gene models expected');
+
+  $json = json_GET("$base/$region?feature=gene;trim_upstream=1", 'Negative strand, trim upstream');
+  is(scalar(@{$json}), 0, '0 gene models expected');
+
+  # negative strand, trim 3'
+  $region = '6:1514000-1516000:-1';
+  $json = json_GET("$base/$region?feature=gene;trim_downstream=0", 'Negative strand, no downstream trimming');
+  is(scalar(@{$json}), 1, '1 protein coding gene models expected');
+
+  $json = json_GET("$base/$region?feature=gene;trim_downstream=1", 'Negative strand, trim downstream');
+  is(scalar(@{$json}), 0, '0 gene models expected');
+
+  # negative strand, trim both
+  $region = '6:1514000-1515000';
+  $json = json_GET("$base/$region?feature=gene;trim_upstream=1;trim_downstream=1", 'Negative strand, trim up-downstream');
+  is(scalar(@{$json}), 0, '0 gene models expected');
+
+  $region = '6:1513000-1516000';
+  $json = json_GET("$base/$region?feature=gene;trim_upstream=1;trim_downstream=1", 'Negative strand, trim up-downstream');
+  is(scalar(@{$json}), 1, '1 gene models expected');
+  
+}
+
 
 #Query variation DB
 {
