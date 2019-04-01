@@ -83,6 +83,29 @@ sub fetch_by_term {
 }
 
 
+=head fetch_ontology_by_description
+
+extract matched ontology terms by phenotype description
+
+=cut
+
+sub fetch_ontology_by_phenotype_description {
+
+  my ($self, $species, $name) = @_;
+
+  my @phenotype_features;
+
+  my $phe_ad = $self->context->model('Registry')->get_adaptor( $species, 'variation', 'Phenotype');
+  my $phenos = $phe_ad->fetch_by_description( $name );
+  if(scalar @$phenos) {
+    return $phenos->[0]->ontology_accessions_with_source;
+  }
+
+  return [];
+}
+
+
+
 
 
 

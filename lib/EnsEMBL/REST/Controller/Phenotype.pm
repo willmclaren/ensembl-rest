@@ -80,6 +80,27 @@ sub term: Chained('/') PathPart('phenotype/term') Args(2) ActionClass('REST') {
 }
 
 
+#/phenotype/ontology/homo_sapiens/ciliopathy
+
+sub term_GET {}
+
+sub term: Chained('/') PathPart('phenotype/ontology') Args(2) ActionClass('REST') {
+
+  my ($self, $c, $species, $term) = @_;
+
+  my $phenotype_terms;
+
+  try {
+    $phenotype_terms = $c->model('Phenotype')->fetch_ontology_by_phenotype_description($species, $term);
+  }
+  catch {
+    $c->log->debug('Problems:'.$_)
+  };
+
+  $self->status_ok($c, entity => $phenotype_terms );
+}
+
+
 
 =pod
 
